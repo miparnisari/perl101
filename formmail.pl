@@ -3,25 +3,19 @@
 use strict;
 use warnings;
 
-use CGI; # or CGI::Simple ?
-use JSON::XS;
-use Email::Stuff;
-
-sub error {
-    my $error_msg = shift;
-
-    # we don't really need those since we're updating the page with Jemplate
-    #my $return_link_url   = $cgi->param('return_link_url')   || q{};
-    #my $return_link_title = $cgi->param('return_link_title') || q{};
-
-    print encode_json { error => $error_msg }; 
-
-    exit 0;
-}
+use CGI;
+use JSON;
+use Email::Sender::Simple qw(sendmail);
+use Email::Simple;
+use Email::Simple::Creator;
 
 my $cgi = CGI->new();
+my $op = JSON -> new -> utf8 -> pretty(1);
 
-print $cgi->header( -charset => 'UTF-8' );
+print $cgi->header('application/json;charset=UTF-8');
+
+use Data::Dumper; 
+print STDERR Dumper $cgi->Vars;
 
 my $subject   = $cgi->param('subject')  || q{};
 my $name      = $cgi->param('realname') || q{};
@@ -30,19 +24,26 @@ my $text      = $cgi->param('text')     || q{};
 my $recipient = q{andy@petdance.com}; # this shouldn't be in the form
 my $from      = qq{$name <$email>};
 
-if ( !$name || !$text ) {
-    # a name and text are essential
-    error('Missing name or text');
+my $json;
+
+try {
+    if ( !$name || !$text ) {
+        die('Missing name or text');
+    }
+    my $email = Email::Simple->create(
+        header => [To=>$recipient, From=>$from, Subject=>$subject],
+        body => $text
+    );
+    sendmail($email,
+             {from=>$from,
+             transport=>Email::Sender::Transport::Sendmail->new});
+    $json = $op -> encode({
+        success => 'imminent'
+    });
+} catch {
+     $json = $op -> encode({
+        error => $_
+    });
+} finally {
+    print $json;
 }
-
-# this should work but it didn't for me
-# maybe it was my sendmail definitions
-# but i didn't have the time to debug it
-Email::Stuff->from($from)
-            ->to($recipient)
-            ->text_body($text)
-            ->subject($subject)
-            ->send;
-
-print encode_json { success => 'imminent' };
-
